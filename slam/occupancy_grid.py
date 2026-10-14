@@ -82,3 +82,12 @@ class OccupancyGrid:
 
     def probability_map(self) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-self.log_odds))
+
+    def occupied_points(self, threshold: float = 0.7) -> np.ndarray:
+        """World-frame (N, 2) centers of cells currently believed occupied -- what Stage
+        4's scan-matcher aligns a fresh lidar scan against (the map built SO FAR, hence
+        "scan-to-map" matching rather than matching consecutive scans to each other)."""
+        cy, cx = np.nonzero(self.probability_map() > threshold)
+        xs = self.xmin + (cx + 0.5) * self.resolution
+        ys = self.ymin + (cy + 0.5) * self.resolution
+        return np.stack([xs, ys], axis=1)

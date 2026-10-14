@@ -45,6 +45,11 @@ class DiffDriveRobot:
         v_noisy = v + self._rng.normal(0.0, sv * abs(v) + 1e-4)
         omega_noisy = omega + self._rng.normal(0.0, so * abs(omega) + sov * abs(v) + 1e-4)
         self.odom_pose = self._integrate(self.odom_pose, v_noisy, omega_noisy, dt)
+        # Exposed so a caller tracking its own belief pose (Stage 4 scan-matching) can
+        # apply the IDENTICAL noisy incremental motion as odom_pose got, rather than
+        # jumping to the cumulative odom_pose itself (which would throw away any
+        # correction already folded into the belief pose from a prior step).
+        self.last_noisy_vw = (v_noisy, omega_noisy)
 
     @staticmethod
     def _integrate(pose, v, omega, dt):

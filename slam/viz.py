@@ -13,7 +13,7 @@ from PIL import Image
 
 
 def render_frame(world, true_pose, odom_pose=None, scan_points=None,
-                  true_trail=None, odom_trail=None, map_points=None,
+                  true_trail=None, odom_trail=None, belief_trail=None, map_points=None,
                   occupancy_grid=None, show_ground_truth_walls=True,
                   figsize=(6, 4.5), dpi=100) -> np.ndarray:
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
@@ -54,6 +54,9 @@ def render_frame(world, true_pose, odom_pose=None, scan_points=None,
     if odom_trail is not None and len(odom_trail) > 1:
         ax.plot(odom_trail[:, 0], odom_trail[:, 1], color="#e08b2a", linewidth=1.2,
                 linestyle="--", label="odometry estimate")
+    if belief_trail is not None and len(belief_trail) > 1:
+        ax.plot(belief_trail[:, 0], belief_trail[:, 1], color="#8844cc", linewidth=1.2,
+                linestyle="-.", label="SLAM belief (corrected)")
 
     _draw_robot(ax, true_pose, color="#2a9d4a")
     if odom_pose is not None:

@@ -41,8 +41,15 @@ specifics:
    pose — only the mapper's BELIEF about where it is changes). Shows concretely how
    dead-reckoning drift corrupts a map over time: wall accuracy drops from 96.2% to 60.3%,
    and the mapped walls visibly separate from their true positions — motivating Stage 4.
-4. Scan-matching (e.g. a simple point-to-point ICP) to correct the pose estimate against
-   the map being built, closing the basic SLAM loop.
+4. **Scan-matching (point-to-point ICP) to correct the pose estimate against the map
+   being built, closing the basic SLAM loop** — DONE. Every tick: predict (apply the
+   odometry delta to a running belief pose) → correct (ICP-align the current lidar scan
+   against the occupied cells mapped so far) → update the map with the corrected pose.
+   ICP found enough map to correct against on 264/269 steps (the rest are the very start
+   of the lap, before enough wall has been seen). Final position drift drops from 0.132m
+   (raw odometry) to 0.065m (SLAM-corrected) — roughly half — and map wall accuracy
+   recovers from Stage 3's 60.3% to 79.5% (short of Stage 2's 96.2% true-pose ceiling,
+   since the correction is real but imperfect, not free).
 5. (Stretch) Loop closure / pose-graph correction, exploiting the deliberately-built loop
    in the world.
 
@@ -83,6 +90,27 @@ python3 demo_stage2_mapping.py --pose-source true --record media/stage2_mapping_
 python3 demo_stage2_mapping.py --pose-source odom --record media/stage3_mapping_odom_drift.gif
 ```
 
+### Stage 4 demo: closing the loop with scan-matching
+
+<p align="center">
+  <img src="media/stage4_slam_corrected.gif" width="520" alt="Occupancy-grid map built from a belief pose that ICP scan-matching corrects every step: the SLAM-corrected trail (purple, dash-dot) tracks the true path (green) far more closely than the raw odometry estimate (orange, dashed), which visibly separates">
+</p>
+
+Same mapper, same trajectory, but now the pose fed to the map is a `belief_pose` that gets
+corrected every step: a lidar scan is aligned (point-to-point ICP, `slam/scan_match.py`)
+against the occupied cells of the map built *so far* ("scan-to-map" matching, the same
+style Hector SLAM/Cartographer's local matcher use), and the corrected pose both drives the
+next map update and seeds the next prediction. ICP had enough map to correct against on
+264/269 steps — the rest are the very start of the lap, before enough wall has been seen,
+during which belief_pose just follows the raw odometry prediction (identical to Stage 3).
+Final position drift: 0.065m (SLAM-corrected) vs. 0.132m (raw odometry) — roughly half.
+Wall accuracy: 79.5%, up from Stage 3's 60.3%, though short of Stage 2's 96.2% true-pose
+ceiling — the correction is real, but not free of its own residual error.
+
+```bash
+python3 demo_stage4_slam.py --record media/stage4_slam_corrected.gif
+```
+
 ## Repository layout
 
 ```
@@ -92,10 +120,13 @@ slam_sim/
 │   ├── robot.py           # unicycle kinematics, true pose vs. noisy dead-reckoning odometry
 │   ├── lidar.py            # 360-beam ray-casting sensor against the world's walls
 │   ├── occupancy_grid.py    # log-odds occupancy-grid mapping (Bresenham ray rasterization)
+│   ├── scan_match.py          # point-to-point ICP: align a scan against the map built so far
 │   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
+│   ├── eval.py                 # shared map-accuracy scoring (reused by every mapping demo)
 │   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
 ├── demo_stage1_sim.py    # Stage 1 demo: scripted loop, verifies the simulator itself
 ├── demo_stage2_mapping.py # Stage 2/3 demo: mapping from true pose vs. noisy odometry
+├── demo_stage4_slam.py     # Stage 4 demo: ICP scan-matching correction, closing the loop
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md

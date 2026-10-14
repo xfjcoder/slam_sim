@@ -28,29 +28,7 @@ from slam.lidar import Lidar2D
 from slam.occupancy_grid import OccupancyGrid
 from slam.viz import render_frame, save_gif
 from slam.trajectory import WAYPOINTS, run_loop
-
-
-def wall_sample_points(world, n_per_wall=20, inset=0.05):
-    """Points just INSIDE each wall segment (by `inset` m, along its own inward normal) --
-    the cell a correct map should mark occupied is the wall's own location, not empty space
-    half a cell away from it, so sampling exactly on the line (inset=0) would be too
-    sensitive to which side of a cell boundary the wall happens to fall on."""
-    pts = []
-    cx, cy = (world.bounds[0] + world.bounds[1]) / 2, (world.bounds[2] + world.bounds[3]) / 2
-    for x1, y1, x2, y2 in world.walls:
-        t = np.linspace(0.0, 1.0, n_per_wall)
-        xs, ys = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
-        # inward normal: perpendicular to the wall, pointing toward the map's own centroid
-        # (works for this axis-aligned rectangle/island layout, not a general polygon).
-        nx, ny = -(y2 - y1), (x2 - x1)
-        norm = np.hypot(nx, ny) + 1e-9
-        nx, ny = nx / norm, ny / norm
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        if (mx + nx * inset - cx) ** 2 + (my + ny * inset - cy) ** 2 > \
-           (mx - nx * inset - cx) ** 2 + (my - ny * inset - cy) ** 2:
-            nx, ny = -nx, -ny
-        pts.append(np.stack([xs + nx * inset, ys + ny * inset], axis=1))
-    return np.concatenate(pts, axis=0)
+from slam.eval import map_accuracy
 
 
 def main():
@@ -84,23 +62,11 @@ def main():
     print(f"Finished after {n_steps} steps ({n_steps * args.dt:.1f}s simulated), "
           f"pose_source={args.pose_source}.")
 
-    prob = grid.probability_map()
-    wall_pts = wall_sample_points(world)
-    wall_cells = np.array([grid.world_to_cell(x, y) for x, y in wall_pts])
-    in_bounds = ((wall_cells[:, 0] >= 0) & (wall_cells[:, 0] < grid.nx) &
-                 (wall_cells[:, 1] >= 0) & (wall_cells[:, 1] < grid.ny))
-    wall_prob = prob[wall_cells[in_bounds, 1], wall_cells[in_bounds, 0]]
-    wall_accuracy = float((wall_prob > 0.5).mean()) if len(wall_prob) else float("nan")
-
-    free_pts = WAYPOINTS[:-1]   # the 4 corner waypoints themselves are known free space
-    free_cells = np.array([grid.world_to_cell(x, y) for x, y in free_pts])
-    free_prob = prob[free_cells[:, 1], free_cells[:, 0]]
-    free_accuracy = float((free_prob < 0.5).mean())
-
+    wall_accuracy, free_accuracy, n_wall_in_bounds, n_wall_total = map_accuracy(grid, world)
     print(f"Wall-point accuracy (correctly marked occupied): {wall_accuracy:.3f} "
-          f"({in_bounds.sum()}/{len(wall_pts)} sample points in-bounds)")
+          f"({n_wall_in_bounds}/{n_wall_total} sample points in-bounds)")
     print(f"Free-point accuracy (correctly marked free): {free_accuracy:.3f} "
-          f"({len(free_pts)} sample points)")
+          f"(4 sample points)")
 
     if args.record:
         Path(args.record).parent.mkdir(parents=True, exist_ok=True)
