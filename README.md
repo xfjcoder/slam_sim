@@ -27,8 +27,9 @@ specifics:
 
 ## Project summary
 
-All 5 originally planned stages (1 through the loop-closure stretch goal) are done. In
-order, each one fixes a concrete failure the previous one exposed:
+All 5 originally planned stages (1 through the loop-closure stretch goal) are done, plus a
+sixth follow-on stage porting the pipeline onto a real robot. In order, each one fixes a
+concrete failure the previous one exposed:
 
 | Stage | What it adds | Result |
 |---|---|---|
@@ -37,12 +38,15 @@ order, each one fixes a concrete failure the previous one exposed:
 | 3. Mapping (odometry pose) | Same mapper, fed drifting odometry instead | Wall accuracy collapses to 60.3% — drift corrupts the map |
 | 4. Scan-matching (ICP) | Correct the pose every tick against the map built so far | Drift 0.132m → 0.065m; wall accuracy recovers to 79.5% |
 | 5. Loop closure (stretch) | One ICP match to the start + batch pose-graph solve | Drift 0.327m → 0.055m; corrects the *whole* trajectory, not just the latest pose |
+| 6. Real Go2 quadruped | Same Stage 2/4 pipeline, unmodified, on real MuJoCo dynamics + real lidar | Drift 1.178m → 0.038m over one ~39s lap in a richer world |
 
 The throughline: odometry alone drifts without bound (Stage 1/3); continuously correcting
 against the map you're building helps a lot but is still a locally-greedy fix (Stage 4);
 recognizing an explicit revisit and solving globally is what actually closes the loop
-(Stage 5). All five stages are verified both numerically (printed accuracy/drift/RMSE) and
-visually (every stage has a GIF — see below) — the two checks agree throughout.
+(Stage 5); and none of it was specific to the toy kinematic robot it was developed against
+— the same pipeline, unmodified, works on a real legged robot's real sensor stream (Stage
+6). All six stages are verified both numerically (printed accuracy/drift/RMSE) and visually
+(every stage has a GIF — see below) — the two checks agree throughout.
 
 ## Staged plan
 
@@ -80,6 +84,11 @@ visually (every stage has a GIF — see below) — the two checks agree througho
    solve (`slam/pose_graph.py`) redistributes the loop's accumulated error across every
    pose in between — not just the last one. Final position drift: 0.327m (odometry-only)
    → 0.055m (pose-graph-optimized); trajectory RMSE vs. ground truth: 0.162m → 0.102m.
+6. **(Follow-on) The same pipeline, on the real Go2 quadruped** — DONE. See "Stage 6"
+   below for the full writeup; the short version: Stage 2/4's occupancy grid + ICP
+   correction run completely unmodified against a real MuJoCo lidar scan and real
+   quadruped dynamics, and still cut final position drift from 1.178m (raw, noisy
+   leg-odometry) to 0.038m (SLAM-corrected) over one ~39s lap.
 
 ### Stage 1 demo
 
@@ -159,6 +168,43 @@ position drift: 0.327m (odometry-only) → 0.055m (pose-graph-optimized).
 python3 demo_stage5_loop_closure.py --record media/stage5_loop_closure.gif
 ```
 
+### Stage 6: the real Go2 quadruped, in a richer world
+
+<p align="center">
+  <img src="media/stage6_go2_quadruped.gif" width="300" alt="The real Unitree Go2 quadruped (MuJoCo rigid-body dynamics + classical convex-MPC controller) walking a full lap around the loop corridor's island and a second free-standing pillar obstacle">
+  <img src="media/stage6_go2_slam_map.gif" width="300" alt="Occupancy-grid map built from the quadruped's real lidar and real (noisy) leg odometry: raw odometry (orange) drifts badly, ICP-corrected SLAM belief (purple) tracks the true path (green) closely">
+</p>
+
+Every stage above uses this project's own simplified kinematic unicycle robot, deliberately
+isolating the SLAM algorithm from locomotion noise. This stage asks the opposite question:
+does the Stage 2/4 pipeline (occupancy grid + ICP correction) still work completely
+unmodified against a REAL robot? It's pointed at the actual Unitree Go2 quadruped from the
+sibling `go1_rl_walk` project (real MuJoCo rigid-body dynamics, real convex-MPC
+balance/footstep control, zero kinematic idealization) via `slam/mj_lidar.py` (a true
+`mujoco.mj_ray` 2D lidar cast against real wall geometry injected into the scene) and a
+synthesized "leg odometry" (the robot's own realized body-frame velocity, corrupted by the
+same noise model `slam/robot.py` uses — so real stance-phase dynamics contribute to the
+drift, not just an injected random walk). The world is a step up from Stages 1-5's single
+rectangle-with-an-island: the same loop corridor, plus a second, free-standing pillar
+obstacle placed well clear of the scripted route (no new obstacle-avoidance/path-planning
+logic needed or added — deliberately out of scope, same as `go1_rl_walk`'s own closing
+decision).
+
+Over one ~39s lap: final position drift 1.178m (raw, noisy leg-odometry) → 0.038m
+(SLAM-corrected) — more than 30x — with ICP finding enough map to correct against on
+778/779 lidar scans. Wall accuracy 73.3% (short of the kinematic-robot Stage 2's 96.2%
+ceiling — a coarser 180-beam lidar and real dynamics noise are both harder than the toy
+sim, as expected, but the correction is still clearly working, visible in the GIF as the
+purple SLAM-belief trail hugging the true path while raw odometry visibly balloons outward
+on the far turns).
+
+```bash
+# Needs go1_rl_walk/mpc's own venv (casadi/pinocchio/convex_mpc), not this project's
+# requirements.txt -- see go1_rl_walk/mpc/README.md.
+/home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage6_go2_world.py \
+    --record-map media/stage6_go2_slam_map.gif --record-robot media/stage6_go2_quadruped.gif
+```
+
 ## Repository layout
 
 ```
@@ -170,6 +216,7 @@ slam_sim/
 │   ├── occupancy_grid.py    # log-odds occupancy-grid mapping (Bresenham ray rasterization)
 │   ├── scan_match.py          # point-to-point ICP: align a scan against the map built so far
 │   ├── pose_graph.py           # batch least-squares pose-graph optimizer (Stage 5)
+│   ├── mj_lidar.py              # real mujoco.mj_ray 2D lidar scan (Stage 6, real robot)
 │   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
 │   ├── eval.py                 # shared map-accuracy scoring (reused by every mapping demo)
 │   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
@@ -177,6 +224,7 @@ slam_sim/
 ├── demo_stage2_mapping.py # Stage 2/3 demo: mapping from true pose vs. noisy odometry
 ├── demo_stage4_slam.py     # Stage 4 demo: ICP scan-matching correction, closing the loop
 ├── demo_stage5_loop_closure.py # Stage 5 demo: loop closure + pose-graph optimization
+├── demo_stage6_go2_world.py     # Stage 6 demo: same pipeline, real Go2 quadruped (MuJoCo)
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md
