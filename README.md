@@ -50,8 +50,17 @@ specifics:
    (raw odometry) to 0.065m (SLAM-corrected) — roughly half — and map wall accuracy
    recovers from Stage 3's 60.3% to 79.5% (short of Stage 2's 96.2% true-pose ceiling,
    since the correction is real but imperfect, not free).
-5. (Stretch) Loop closure / pose-graph correction, exploiting the deliberately-built loop
-   in the world.
+5. **(Stretch) Loop closure / pose-graph correction** — DONE. Deliberately isolated from
+   Stage 4's continuous correction: this demo's belief trajectory is raw, uncorrected
+   odometry, so open-loop drift actually accumulates (odometry noise also turned up 4x
+   from Stage 1-4's default, since at that default one lap's drift is already too small,
+   ~0.15m, for loop closure's correction to be dramatic). Once the odometry estimate
+   drifts back near the start, ICP matches the current scan against the very first
+   keyframe's scan; if it converges, that single relative-pose measurement becomes a
+   graph edge alongside the whole chain of odometry edges, and a batch least-squares
+   solve (`slam/pose_graph.py`) redistributes the loop's accumulated error across every
+   pose in between — not just the last one. Final position drift: 0.327m (odometry-only)
+   → 0.055m (pose-graph-optimized); trajectory RMSE vs. ground truth: 0.162m → 0.102m.
 
 ### Stage 1 demo
 
@@ -111,6 +120,26 @@ ceiling — the correction is real, but not free of its own residual error.
 python3 demo_stage4_slam.py --record media/stage4_slam_corrected.gif
 ```
 
+### Stage 5 demo (stretch): loop closure
+
+<p align="center">
+  <img src="media/stage5_loop_closure.gif" width="520" alt="A lap driven on raw odometry alone (orange, dashed) visibly drifts off the true path (green); once a loop-closure constraint is detected, a pose-graph optimization snaps the whole trajectory (purple) back onto the true path, not just its final pose">
+</p>
+
+This demo turns up odometry noise and skips Stage 4's continuous correction on purpose, so
+open-loop drift has a chance to actually accumulate (orange path visibly separates from
+green over the lap). Once the odometry estimate comes back near the start, ICP matches the
+current scan against the very first keyframe's scan; the resulting relative-pose
+measurement becomes a loop-closure edge in a pose graph alongside the whole chain of
+odometry edges, and a batch least-squares solve corrects every pose in the trajectory at
+once — the final few frames morph the raw odometry trail into the optimized one to make
+that "closing" event visible as something that happens, not just a changed number. Final
+position drift: 0.327m (odometry-only) → 0.055m (pose-graph-optimized).
+
+```bash
+python3 demo_stage5_loop_closure.py --record media/stage5_loop_closure.gif
+```
+
 ## Repository layout
 
 ```
@@ -121,12 +150,14 @@ slam_sim/
 │   ├── lidar.py            # 360-beam ray-casting sensor against the world's walls
 │   ├── occupancy_grid.py    # log-odds occupancy-grid mapping (Bresenham ray rasterization)
 │   ├── scan_match.py          # point-to-point ICP: align a scan against the map built so far
+│   ├── pose_graph.py           # batch least-squares pose-graph optimizer (Stage 5)
 │   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
 │   ├── eval.py                 # shared map-accuracy scoring (reused by every mapping demo)
 │   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
 ├── demo_stage1_sim.py    # Stage 1 demo: scripted loop, verifies the simulator itself
 ├── demo_stage2_mapping.py # Stage 2/3 demo: mapping from true pose vs. noisy odometry
 ├── demo_stage4_slam.py     # Stage 4 demo: ICP scan-matching correction, closing the loop
+├── demo_stage5_loop_closure.py # Stage 5 demo: loop closure + pose-graph optimization
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md

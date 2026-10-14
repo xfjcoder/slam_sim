@@ -75,6 +75,14 @@ def icp_2d(scan_points: np.ndarray, map_points: np.ndarray, init_pose,
     return corrected_pose, True, n_valid
 
 
+def transform_points(points: np.ndarray, pose) -> np.ndarray:
+    """ROBOT-frame `points` (N, 2) -> world frame, via `pose` (x, y, theta)."""
+    x, y, theta = pose
+    c, s = np.cos(theta), np.sin(theta)
+    R = np.array([[c, -s], [s, c]])
+    return points @ R.T + np.array([x, y])
+
+
 def scan_to_local_points(ranges: np.ndarray, hit: np.ndarray, angles: np.ndarray) -> np.ndarray:
     """Lidar (ranges, hit, angles) -> (N, 2) hit points in the ROBOT's own local frame
     (angle measured from the robot's heading, not world-frame) -- what icp_2d expects as
