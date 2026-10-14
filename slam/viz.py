@@ -14,6 +14,7 @@ from PIL import Image
 
 def render_frame(world, true_pose, odom_pose=None, scan_points=None,
                   true_trail=None, odom_trail=None, map_points=None,
+                  occupancy_grid=None, show_ground_truth_walls=True,
                   figsize=(6, 4.5), dpi=100) -> np.ndarray:
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     xmin, xmax, ymin, ymax = world.bounds
@@ -22,8 +23,22 @@ def render_frame(world, true_pose, odom_pose=None, scan_points=None,
     ax.set_aspect("equal")
     ax.set_facecolor("#f0f0f0")
 
-    for x1, y1, x2, y2 in world.walls:
-        ax.plot([x1, x2], [y1, y2], color="black", linewidth=2)
+    if occupancy_grid is not None:
+        # imshow's own pixel convention is row 0 = top, but grid row 0 = ymin (bottom) --
+        # origin="lower" matches them up so the map isn't rendered upside down.
+        prob = occupancy_grid.probability_map()
+        gxmin, gymin = occupancy_grid.xmin, occupancy_grid.ymin
+        gxmax = gxmin + occupancy_grid.nx * occupancy_grid.resolution
+        gymax = gymin + occupancy_grid.ny * occupancy_grid.resolution
+        # 1 - prob: occupied (prob high) -> dark, free (prob low) -> light, unknown (0.5) -> mid gray.
+        ax.imshow(1.0 - prob, cmap="gray", vmin=0.0, vmax=1.0, origin="lower",
+                  extent=(gxmin, gxmax, gymin, gymax), zorder=0)
+
+    if show_ground_truth_walls:
+        for x1, y1, x2, y2 in world.walls:
+            ax.plot([x1, x2], [y1, y2], color="black", linewidth=1,
+                    linestyle=":" if occupancy_grid is not None else "-",
+                    alpha=0.6 if occupancy_grid is not None else 1.0)
 
     if map_points is not None and len(map_points):
         ax.scatter(map_points[:, 0], map_points[:, 1], s=1, c="#4477aa", alpha=0.5,
@@ -44,7 +59,8 @@ def render_frame(world, true_pose, odom_pose=None, scan_points=None,
     if odom_pose is not None:
         _draw_robot(ax, odom_pose, color="#e08b2a")
 
-    ax.legend(loc="upper right", fontsize=7, framealpha=0.8)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(loc="upper right", fontsize=7, framealpha=0.8)
     fig.tight_layout()
     fig.canvas.draw()
     frame = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()

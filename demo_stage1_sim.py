@@ -2,11 +2,9 @@
 visual inspection, not just unit numbers -- same "always generate a GIF for a new behavior"
 discipline the quadruped project this grew out of used throughout.
 
-Scripts the robot around a loop (waypoint-following, proportional turn-to-face + drive
-controller -- deliberately reused from go1_rl_walk/mpc/navigate_mpc.py's own turn-to-face
-steering law, which already proved itself there) once around the island obstacle. No
-mapping/localization algorithm yet -- this stage only has to prove the simulator itself is
-right: the lidar hits should visibly hug the walls, and the odometry estimate (orange,
+Scripts the robot around a loop (see slam/trajectory.py) once around the island obstacle.
+No mapping/localization algorithm yet -- this stage only has to prove the simulator itself
+is right: the lidar hits should visibly hug the walls, and the odometry estimate (orange,
 dashed) should visibly drift away from the true path (green, solid) over the lap -- that
 drift is the whole reason later stages exist.
 
@@ -21,23 +19,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from slam.world import World
-from slam.robot import DiffDriveRobot, wrap_to_pi
+from slam.robot import DiffDriveRobot
 from slam.lidar import Lidar2D
 from slam.viz import render_frame, save_gif
-
-WAYPOINTS = np.array([
-    [1.5, 1.5], [10.5, 1.5], [10.5, 6.5], [1.5, 6.5], [1.5, 1.5],
-])
-
-
-def waypoint_command(pose, goal, kp_v=1.0, kp_w=2.0, v_max=1.2, w_max=1.5):
-    x, y, theta = pose
-    dx, dy = goal[0] - x, goal[1] - y
-    dist = float(np.hypot(dx, dy))
-    heading_err = wrap_to_pi(float(np.arctan2(dy, dx)) - theta)
-    omega = float(np.clip(kp_w * heading_err, -w_max, w_max))
-    v = float(np.clip(kp_v * dist, 0.0, v_max) * max(0.0, np.cos(heading_err)))
-    return v, omega, dist
+from slam.trajectory import WAYPOINTS, run_loop
 
 
 def main():
@@ -57,28 +42,19 @@ def main():
 
     true_trail, odom_trail = [robot.true_pose[:2].copy()], [robot.odom_pose[:2].copy()]
     frames = []
-    wp_idx = 1
 
-    for step in range(args.max_steps):
-        goal = WAYPOINTS[wp_idx]
-        v, omega, dist = waypoint_command(robot.true_pose, goal)
-        if dist <= args.waypoint_tolerance:
-            wp_idx += 1
-            if wp_idx >= len(WAYPOINTS):
-                break
-            continue
-        robot.step(v, omega, args.dt)
+    def on_step(step, robot):
         true_trail.append(robot.true_pose[:2].copy())
         odom_trail.append(robot.odom_pose[:2].copy())
-
         if step % args.render_every == 0:
             scan_points = lidar.scan_points_world(robot.true_pose, world)
-            frame = render_frame(world, robot.true_pose, robot.odom_pose, scan_points,
-                                  np.array(true_trail), np.array(odom_trail))
-            frames.append(frame)
+            frames.append(render_frame(world, robot.true_pose, robot.odom_pose, scan_points,
+                                        np.array(true_trail), np.array(odom_trail)))
+
+    n_steps = run_loop(robot, args.dt, args.max_steps, args.waypoint_tolerance, on_step)
 
     drift = float(np.hypot(*(robot.true_pose[:2] - robot.odom_pose[:2])))
-    print(f"Finished after {step + 1} steps ({(step + 1) * args.dt:.1f}s simulated). "
+    print(f"Finished after {n_steps} steps ({n_steps * args.dt:.1f}s simulated). "
           f"Final true pose: ({robot.true_pose[0]:.2f}, {robot.true_pose[1]:.2f}). "
           f"Odometry drift at finish: {drift:.2f} m.")
 

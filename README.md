@@ -31,10 +31,16 @@ specifics:
    visually, not just by unit numbers: lidar hits should hug every wall tightly, and the
    dead-reckoning odometry estimate should visibly drift away from the true path over a
    lap — that drift is the whole reason the later stages exist.
-2. Occupancy-grid mapping, given the TRUE pose (perfect localization) — isolates the
-   mapping half of the problem first, before localization noise is in the picture at all.
-3. Mapping from the NOISY odometry estimate instead — shows concretely how dead-reckoning
-   drift corrupts a map over time, motivating scan-matching.
+2. **Occupancy-grid mapping, given the TRUE pose (perfect localization)** — DONE. Isolates
+   the mapping half of the problem first, before localization noise is in the picture at
+   all. Classical log-odds grid (the representation GMapping/Hector SLAM/Cartographer all
+   build on): 96.2% of sampled wall points end up correctly marked occupied, 100% of known
+   free-space points correctly marked free.
+3. **Mapping from the NOISY odometry estimate instead** — DONE. Same mapper, same
+   trajectory, only the pose fed to it changes (the lidar itself still senses from the true
+   pose — only the mapper's BELIEF about where it is changes). Shows concretely how
+   dead-reckoning drift corrupts a map over time: wall accuracy drops from 96.2% to 60.3%,
+   and the mapped walls visibly separate from their true positions — motivating Stage 4.
 4. Scan-matching (e.g. a simple point-to-point ICP) to correct the pose estimate against
    the map being built, closing the basic SLAM loop.
 5. (Stretch) Loop closure / pose-graph correction, exploiting the deliberately-built loop
@@ -58,16 +64,38 @@ pip install -r requirements.txt
 python3 demo_stage1_sim.py --record media/stage1_sim_and_drift.gif
 ```
 
+### Stage 2/3 demo: mapping, and what drift does to it
+
+<p align="center">
+  <img src="media/stage2_mapping_true_pose.gif" width="300" alt="Occupancy-grid map built from the true pose: clean, crisp walls matching ground truth exactly, island interior correctly unknown (gray)">
+  <img src="media/stage3_mapping_odom_drift.gif" width="300" alt="Same mapper, same trajectory, fed the noisy odometry estimate instead: the mapped walls (solid black) visibly separate from their true positions (dotted gray)">
+</p>
+
+*Left (Stage 2, true pose): walls come out crisp and exactly matching ground truth; the
+island's interior is correctly left unknown (gray) — the lidar never sees inside a solid
+obstacle. Right (Stage 3, odometry pose): identical mapper and trajectory, only the pose
+fed to it differs — the mapped walls (solid black) visibly separate from their true
+positions (dotted gray overlay) as odometry drift accumulates over the lap. This is the
+concrete failure Stage 4's scan-matching correction exists to fix.*
+
+```bash
+python3 demo_stage2_mapping.py --pose-source true --record media/stage2_mapping_true_pose.gif
+python3 demo_stage2_mapping.py --pose-source odom --record media/stage3_mapping_odom_drift.gif
+```
+
 ## Repository layout
 
 ```
 slam_sim/
 ├── slam/
-│   ├── world.py     # ground-truth 2D map: wall line segments, free-space check
-│   ├── robot.py      # unicycle kinematics, true pose vs. noisy dead-reckoning odometry
-│   ├── lidar.py       # 360-beam ray-casting sensor against the world's walls
-│   └── viz.py          # render a frame (world + poses + scan) -> GIF
-├── demo_stage1_sim.py # Stage 1 demo: scripted loop, verifies the simulator itself
+│   ├── world.py          # ground-truth 2D map: wall line segments, free-space check
+│   ├── robot.py           # unicycle kinematics, true pose vs. noisy dead-reckoning odometry
+│   ├── lidar.py            # 360-beam ray-casting sensor against the world's walls
+│   ├── occupancy_grid.py    # log-odds occupancy-grid mapping (Bresenham ray rasterization)
+│   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
+│   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
+├── demo_stage1_sim.py    # Stage 1 demo: scripted loop, verifies the simulator itself
+├── demo_stage2_mapping.py # Stage 2/3 demo: mapping from true pose vs. noisy odometry
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md
