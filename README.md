@@ -25,6 +25,25 @@ specifics:
   signature hard problem in SLAM, so the sandbox is built to support it from Stage 1,
   rather than retrofitted later.
 
+## Project summary
+
+All 5 originally planned stages (1 through the loop-closure stretch goal) are done. In
+order, each one fixes a concrete failure the previous one exposed:
+
+| Stage | What it adds | Result |
+|---|---|---|
+| 1. Simulator core | Kinematic robot + 360° lidar + a world with a loop in it | Odometry visibly drifts from true path over one lap (0.17m) |
+| 2. Mapping (true pose) | Log-odds occupancy grid, perfect localization | 96.2% wall accuracy, 100% free-space accuracy |
+| 3. Mapping (odometry pose) | Same mapper, fed drifting odometry instead | Wall accuracy collapses to 60.3% — drift corrupts the map |
+| 4. Scan-matching (ICP) | Correct the pose every tick against the map built so far | Drift 0.132m → 0.065m; wall accuracy recovers to 79.5% |
+| 5. Loop closure (stretch) | One ICP match to the start + batch pose-graph solve | Drift 0.327m → 0.055m; corrects the *whole* trajectory, not just the latest pose |
+
+The throughline: odometry alone drifts without bound (Stage 1/3); continuously correcting
+against the map you're building helps a lot but is still a locally-greedy fix (Stage 4);
+recognizing an explicit revisit and solving globally is what actually closes the loop
+(Stage 5). All five stages are verified both numerically (printed accuracy/drift/RMSE) and
+visually (every stage has a GIF — see below) — the two checks agree throughout.
+
 ## Staged plan
 
 1. **Simulator core** (world, kinematic robot, lidar ray-casting) — DONE. Verified
