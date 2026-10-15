@@ -27,9 +27,10 @@ specifics:
 
 ## Project summary
 
-All 5 originally planned stages (1 through the loop-closure stretch goal) are done, plus a
-sixth follow-on stage porting the pipeline onto a real robot. In order, each one fixes a
-concrete failure the previous one exposed:
+All 5 originally planned stages (1 through the loop-closure stretch goal) are done, plus
+four follow-on stages (a real quadruped, named-location commands, their combination, and a
+3D point-cloud view). In order, each one fixes a concrete failure the previous one exposed,
+or asks a question the previous one didn't:
 
 | Stage | What it adds | Result |
 |---|---|---|
@@ -54,9 +55,17 @@ a scripted lap and a commanded office errand run are both just "a trajectory to 
 free: no new SLAM code was needed to run the office job tour on the real quadruped (Stage
 8). Every stage up to this point also only ever built a FLAT 2D map (even Stage 6/8's "real"
 lidar only ever cast one horizontal plane) -- Stage 9 asks the sensor to look up and down
-too, against the real 3D wall geometry that was there all along. All nine stages are
-verified both numerically (printed accuracy/drift/RMSE/point counts) and visually (every
-stage has a GIF or image — see below) — the two checks agree throughout.
+too, against the real 3D wall geometry that was there all along, and renders the result
+three ways: a rotating GIF, a static six-angle panel, and a genuinely interactive
+drag-to-orbit/scroll-to-zoom HTML viewer (the last one's default camera was itself a small
+case study in "verify by actually rendering it, not just checking the file is well-formed"
+-- see Stage 9's writeup). All nine stages are verified both numerically (printed
+accuracy/drift/RMSE/point counts) and visually (every stage has a GIF or image — see
+below) — the two checks agree throughout.
+
+This closes the project: 5 originally-planned stages plus 4 follow-ons (a real quadruped,
+named-location commands, their combination, and a 3D point-cloud view), each one verified
+before moving to the next. No further stages are planned unless asked for.
 
 ## Staged plan
 
