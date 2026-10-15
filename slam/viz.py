@@ -185,10 +185,15 @@ def save_pointcloud_interactive_html(points: np.ndarray, bounds, path, point_siz
         marker=dict(size=point_size, color=points[:, 2], colorscale="Viridis", opacity=0.85),
     )])
     # Plotly's camera "eye"/"center" are in a normalized scene-relative frame (roughly a
-    # unit cube around the data regardless of actual data units) -- small eye coordinates
-    # place the initial view close to the scene's own center, i.e. inside the building,
-    # rather than the far-away default that only ever looks at it from outside.
-    eye = dict(x=0.12, y=0.12, z=0.09) if start_inside else dict(x=1.25, y=1.25, z=1.0)
+    # unit cube around the data regardless of actual data units), not real-world units --
+    # tuned by actually rendering this office's cloud headlessly (Playwright + chromium)
+    # at a few candidate values. Anything much smaller than this (e.g. 0.12, tried first)
+    # puts the camera almost exactly AT the scene's own center with near-zero distance to
+    # look from, which is degenerate -- it renders as a nearly blank frame with a couple of
+    # wall fragments at odd angles, not a usable "inside" view. 0.7 is close enough to feel
+    # inside the building (floor and nearby walls rising up around the frame) while still
+    # keeping enough of the room layout in view to be legible on first load.
+    eye = dict(x=0.7, y=0.7, z=0.35) if start_inside else dict(x=1.25, y=1.25, z=1.0)
     fig.update_layout(
         scene=dict(
             xaxis=dict(range=[xmin, xmax], title="x"),
