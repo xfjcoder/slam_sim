@@ -13,11 +13,17 @@ While dwelling the commanded velocity is zero, but `env.step()` keeps running ev
 physics tick -- the real balance/footstep controller has no "pause" button, so holding
 still costs just as much compute as driving.
 
+`--record-pointcloud3d` additionally samples `slam/mj_lidar_3d.py`'s multi-ring 3D lidar at
+the robot's own actual (x, y, base-height, yaw) every few 2D lidar scans, accumulating a 3D
+point cloud of the office from the real trajectory (heavier than the no-physics version in
+`demo_stage9_office_pointcloud.py`, but captures the real robot's own height jitter).
+
 Usage (needs go1_rl_walk/mpc's own venv for mujoco/casadi/pinocchio):
     /home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage8_office_go2.py \
         --jobs kitchen conference_a conference_b cubicles fire_extinguisher \
         --record-map media/stage8_office_go2_slam_map.gif \
-        --record-robot media/stage8_office_go2_quadruped.gif
+        --record-robot media/stage8_office_go2_quadruped.gif \
+        --record-pointcloud3d media/stage8_office_go2_pointcloud3d.gif
 """
 import argparse
 import sys
@@ -40,7 +46,9 @@ from slam.robot import DiffDriveRobot                                      # noq
 from slam.occupancy_grid import OccupancyGrid                              # noqa: E402
 from slam.scan_match import icp_2d, scan_to_local_points                   # noqa: E402
 from slam.mj_lidar import mj_lidar_scan                                    # noqa: E402
-from slam.viz import render_frame, save_gif                                # noqa: E402
+from slam.mj_lidar_3d import mj_lidar_scan_3d                              # noqa: E402
+from slam.viz import (render_frame, render_pointcloud_3d,                  # noqa: E402
+                       render_pointcloud_3d_panel, save_gif, save_image)
 from slam.eval import map_accuracy                                         # noqa: E402
 from slam.office import build_world, build_mission, ROOM_LABELS, JOBS      # noqa: E402
 
@@ -68,6 +76,17 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--record-map", type=str, default=None)
     ap.add_argument("--record-robot", type=str, default=None)
+    ap.add_argument("--record-pointcloud3d", type=str, default=None,
+                     help="3D multi-ring point-cloud GIF, sampled from the real robot's "
+                          "actual (x, y, base-height, yaw) -- see slam/mj_lidar_3d.py.")
+    ap.add_argument("--pointcloud-beams", type=int, default=60)
+    ap.add_argument("--pointcloud-stride", type=int, default=3,
+                     help="take a 3D ring scan every Nth 2D lidar scan (not every one -- "
+                          "a multi-ring cast is several times more rays per scan)")
+    ap.add_argument("--pointcloud-frames", type=int, default=48)
+    ap.add_argument("--record-pointcloud3d-still", type=str, default=None,
+                     help="static multi-angle panel PNG of the same 3D point cloud (see "
+                          "slam/viz.py's render_pointcloud_3d_panel)")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -98,6 +117,7 @@ def main():
     true_trail, odom_trail, belief_trail = [], [], []
     n_lidar_scans, n_corrections = 0, 0
     map_frames, robot_frames = [], []
+    pointcloud_points = []
     task_log = []
 
     robot_renderer = None
@@ -186,6 +206,15 @@ def main():
             n_lidar_scans += 1
             belief_trail.append(belief_pose[:2].copy())
 
+            if ((args.record_pointcloud3d or args.record_pointcloud3d_still)
+                    and n_lidar_scans % args.pointcloud_stride == 0):
+                base_z = float(info["base_height"])
+                pts3d = mj_lidar_scan_3d(
+                    env.mujoco_go2.model, env.mujoco_go2.data, (x, y, base_z), yaw,
+                    n_beams=args.pointcloud_beams)
+                if len(pts3d):
+                    pointcloud_points.append(pts3d)
+
             if args.record_map and n_lidar_scans % args.map_render_every == 0:
                 map_frames.append(render_frame(
                     world, (x, y, yaw), occupancy_grid=grid,
@@ -236,6 +265,21 @@ def main():
         Path(args.record_robot).parent.mkdir(parents=True, exist_ok=True)
         save_gif(robot_frames, args.record_robot, fps=1.0 / (dt * args.robot_render_every))
         print(f"Saved {len(robot_frames)} frames to {args.record_robot}")
+    if args.record_pointcloud3d or args.record_pointcloud3d_still:
+        points = (np.concatenate(pointcloud_points, axis=0) if pointcloud_points
+                  else np.zeros((0, 3)))
+        print(f"Accumulated {len(points)} 3D point-cloud hit points from "
+              f"{len(pointcloud_points)} ring scans along the real trajectory.")
+        if args.record_pointcloud3d:
+            pc_frames = render_pointcloud_3d(points, world.bounds, n_frames=args.pointcloud_frames)
+            Path(args.record_pointcloud3d).parent.mkdir(parents=True, exist_ok=True)
+            save_gif(pc_frames, args.record_pointcloud3d, fps=12.0)
+            print(f"Saved {len(pc_frames)} frames to {args.record_pointcloud3d}")
+        if args.record_pointcloud3d_still:
+            panel = render_pointcloud_3d_panel(points, world.bounds)
+            Path(args.record_pointcloud3d_still).parent.mkdir(parents=True, exist_ok=True)
+            save_image(panel, args.record_pointcloud3d_still)
+            print(f"Saved a static multi-angle panel to {args.record_pointcloud3d_still}")
 
 
 if __name__ == "__main__":

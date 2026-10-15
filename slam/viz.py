@@ -89,6 +89,85 @@ def _draw_robot(ax, pose, color, size=0.3):
             color=color, linewidth=2)
 
 
+def render_pointcloud_3d(points: np.ndarray, bounds, n_frames: int = 36,
+                          elevation: float = 25.0, azimuth_start: float = 0.0,
+                          azimuth_sweep: float = 360.0, point_size: float = 2.0,
+                          figsize=(6.4, 5.4), dpi=100) -> list:
+    """Render an accumulated (N, 3) world-frame point cloud as a rotating-azimuth GIF's
+    worth of frames, colored by height (z) -- the one piece of structure a flat 2D
+    occupancy-grid view can't show at all (wall faces vs. wall tops)."""
+    xmin, xmax, ymin, ymax = bounds
+    frames = []
+    azimuths = np.linspace(azimuth_start, azimuth_start + azimuth_sweep, n_frames,
+                            endpoint=False)
+    for az in azimuths:
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        ax = fig.add_subplot(projection="3d")
+        if len(points):
+            ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=points[:, 2],
+                       cmap="viridis", s=point_size, depthshade=True)
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_zlim(0.0, max(1.0, float(points[:, 2].max()) if len(points) else 1.0))
+        ax.set_box_aspect((xmax - xmin, ymax - ymin,
+                           max(1.0, (float(points[:, 2].max()) if len(points) else 1.0))))
+        ax.view_init(elev=elevation, azim=float(az))
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
+        fig.tight_layout()
+        fig.canvas.draw()
+        frame = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+        plt.close(fig)
+        frames.append(frame)
+    return frames
+
+
+def render_pointcloud_3d_panel(points: np.ndarray, bounds, views=None,
+                                point_size: float = 1.5, figsize=(15, 9),
+                                dpi=110) -> np.ndarray:
+    """A single STATIC image: the same point cloud rendered from several fixed angles at
+    once (top-down, two side elevations, and a few 3/4 isometric views) -- lets you "look
+    from a different angle" by looking at a different panel, with no rotating GIF and no
+    extra viewer/dependency needed."""
+    if views is None:
+        views = [
+            ("top-down", 90.0, -90.0),
+            ("front (looking +y)", 0.0, -90.0),
+            ("side (looking +x)", 0.0, 0.0),
+            ("isometric NE", 25.0, 45.0),
+            ("isometric NW", 25.0, 135.0),
+            ("steep oblique", 55.0, -45.0),
+        ]
+    xmin, xmax, ymin, ymax = bounds
+    zmax = max(1.0, float(points[:, 2].max()) if len(points) else 1.0)
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ncols = 3
+    nrows = (len(views) + ncols - 1) // ncols
+    for i, (title, elev, azim) in enumerate(views):
+        ax = fig.add_subplot(nrows, ncols, i + 1, projection="3d")
+        if len(points):
+            ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=points[:, 2],
+                       cmap="viridis", s=point_size, depthshade=True)
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_zlim(0.0, zmax)
+        ax.set_box_aspect((xmax - xmin, ymax - ymin, zmax))
+        ax.view_init(elev=elev, azim=azim)
+        ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=6)
+    fig.tight_layout()
+    fig.canvas.draw()
+    frame = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+    plt.close(fig)
+    return frame
+
+
+def save_image(frame: np.ndarray, path):
+    Image.fromarray(frame).save(path)
+
+
 def save_gif(frames, path, fps=10):
     # optimize=True deliberately NOT used -- matches go1_rl_walk's own established finding
     # that it corrupts/bloats multi-frame GIF output on this Pillow version.

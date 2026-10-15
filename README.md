@@ -41,6 +41,7 @@ concrete failure the previous one exposed:
 | 6. Real Go2 quadruped | Same Stage 2/4 pipeline, unmodified, on real MuJoCo dynamics + real lidar | Drift 1.178m → 0.038m over one ~39s lap in a richer world |
 | 7. Office mission | Multi-room floorplan + a named-location "job" command layer | Drift 0.207m → 0.053m; wall accuracy 83.3% over a 5-stop tour |
 | 8. Office mission, real Go2 | Stage 7's job tour, run on the real quadruped (Stage 6 + 7 combined) | Drift 4.733m → 0.026m over a 130.8s, 5-room real-robot tour |
+| 9. 3D point-cloud map | A multi-ring lidar against the real 3D wall geometry, not a single horizontal plane | 31k-105k 3D points; wall face vs. wall-top structure visible, not just a footprint |
 
 The throughline: odometry alone drifts without bound (Stage 1/3); continuously correcting
 against the map you're building helps a lot but is still a locally-greedy fix (Stage 4);
@@ -51,8 +52,11 @@ the same pipeline again, unmodified, is equally indifferent to *why* the robot i
 a scripted lap and a commanded office errand run are both just "a trajectory to correct"
 (Stage 7) — and those last two independent axes (real robot, real commands) combine for
 free: no new SLAM code was needed to run the office job tour on the real quadruped (Stage
-8). All eight stages are verified both numerically (printed accuracy/drift/RMSE) and
-visually (every stage has a GIF — see below) — the two checks agree throughout.
+8). Every stage up to this point also only ever built a FLAT 2D map (even Stage 6/8's "real"
+lidar only ever cast one horizontal plane) -- Stage 9 asks the sensor to look up and down
+too, against the real 3D wall geometry that was there all along. All nine stages are
+verified both numerically (printed accuracy/drift/RMSE/point counts) and visually (every
+stage has a GIF or image — see below) — the two checks agree throughout.
 
 ## Staged plan
 
@@ -104,6 +108,11 @@ visually (every stage has a GIF — see below) — the two checks agree througho
    named-location mission combine with zero new SLAM code -- the quadruped visits all
    five office locations and cuts final position drift from 4.733m (raw leg-odometry) to
    0.026m (SLAM-corrected) over a 130.8s tour.
+9. **(Follow-on) A 3D lidar point-cloud map** — DONE. See "Stage 9" below; the short
+   version: a multi-ring sensor (`slam/mj_lidar_3d.py`) cast against the real 3D MuJoCo
+   wall geometry instead of a single horizontal plane, accumulated into a point cloud over
+   both a fast no-physics sweep and the real Go2's actual Stage 8 trajectory, each viewable
+   as a rotating GIF or a static multi-angle panel.
 
 ### Stage 1 demo
 
@@ -320,6 +329,56 @@ while the SLAM belief (purple) stays locked to the true path throughout.
     --record-robot media/stage8_office_go2_quadruped.gif
 ```
 
+### Stage 9: a 3D lidar point-cloud map
+
+<p align="center">
+  <img src="media/stage9_office_pointcloud.gif" width="420" alt="A rotating-azimuth view of a 3D point cloud of the office, colored by height, built from a multi-ring lidar cast against the real MuJoCo wall geometry while sweeping Stage 7's kinematic waypoint tour (no quadruped physics needed)">
+</p>
+<p align="center">
+  <img src="media/stage9_office_pointcloud_views.png" width="820" alt="The same point cloud rendered as a static panel of six fixed camera angles -- top-down, front, side, and three isometric views -- all at once, no rotation needed">
+</p>
+
+Every stage up to here only ever built a flat 2D map -- even Stage 6/8's "real" lidar
+(`slam/mj_lidar.py`) only ever cast a single horizontal plane of rays. `slam/mj_lidar_3d.py`
+adds a multi-ring sensor instead (several elevation angles per heading, like a real
+multi-ring lidar), cast against the exact same real 3D MuJoCo wall geometry, and returns
+world-frame 3D hit points directly for accumulation into a point cloud -- since nothing
+downstream needs these for localization, just for looking at. Walls in this project are
+flat-topped 0.6m boxes with no ceiling, so a wall scanned from a few meters away shows up
+as two clear height bands in the cloud: the face and the top edge.
+
+Two ways to build the cloud, both reusing it unmodified:
+- **Fast (`demo_stage9_office_pointcloud.py`)**: no quadruped physics at all -- Stage 7's
+  own kinematic trajectory (`DiffDriveRobot` + `waypoint_command` + the office mission)
+  walked through a STATIC MuJoCo scene (one `mj_forward`, nothing stepped, the same trick
+  Stage 7b's flythrough uses), with the 3D sensor sampled every few ticks along the way.
+  172 ring scans → 31,257 points in under 20 seconds.
+- **From the real Go2 (`demo_stage8_office_go2.py --record-pointcloud3d[-still]`)**: the
+  same multi-ring sensor, sampled from the real quadruped's own actual (x, y, base-height,
+  yaw) during its Stage 8 job tour -- heavier (needs the full physics run), but the cloud
+  reflects the real robot's own height jitter, not an idealized constant sensor height.
+  871 ring scans → 105,157 points.
+
+Both render two ways (`slam/viz.py`): `render_pointcloud_3d` (a rotating-azimuth GIF) and
+`render_pointcloud_3d_panel` (one static image, the cloud from six fixed angles at once --
+top-down, front, side, and three isometric views) -- a still image you can actually look at
+from a different angle just by looking at a different panel, no playback or interactive
+viewer needed. The top-down panel in particular lines up exactly with Stage 7's 2D
+floorplan (doorway gaps, both cubicle clusters, the fire-extinguisher cabinet all visible),
+confirming the 3D cloud and the 2D map agree on where everything is.
+
+```bash
+# Fast (no physics):
+/home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage9_office_pointcloud.py \
+    --record media/stage9_office_pointcloud.gif \
+    --record-still media/stage9_office_pointcloud_views.png
+
+# From the real Go2's actual trajectory:
+/home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage8_office_go2.py \
+    --record-pointcloud3d media/stage8_office_go2_pointcloud3d.gif \
+    --record-pointcloud3d-still media/stage8_office_go2_pointcloud3d_views.png
+```
+
 ## Repository layout
 
 ```
@@ -332,10 +391,11 @@ slam_sim/
 │   ├── scan_match.py          # point-to-point ICP: align a scan against the map built so far
 │   ├── pose_graph.py           # batch least-squares pose-graph optimizer (Stage 5)
 │   ├── mj_lidar.py              # real mujoco.mj_ray 2D lidar scan (Stage 6, real robot)
+│   ├── mj_lidar_3d.py             # multi-ring 3D mujoco.mj_ray lidar scan (Stage 9)
 │   ├── office.py                 # office floorplan + named-location/job registry (Stage 7)
 │   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
 │   ├── eval.py                 # shared map-accuracy scoring (reused by every mapping demo)
-│   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
+│   └── viz.py                  # render a frame/point-cloud (GIF or static panel)
 ├── demo_stage1_sim.py    # Stage 1 demo: scripted loop, verifies the simulator itself
 ├── demo_stage2_mapping.py # Stage 2/3 demo: mapping from true pose vs. noisy odometry
 ├── demo_stage4_slam.py     # Stage 4 demo: ICP scan-matching correction, closing the loop
@@ -344,6 +404,7 @@ slam_sim/
 ├── demo_stage7_office.py          # Stage 7 demo: office floorplan + named-location jobs
 ├── demo_stage7b_office_3d.py        # Stage 7b demo: static 3D MuJoCo flythrough of the office
 ├── demo_stage8_office_go2.py          # Stage 8 demo: Stage 7's office mission, real Go2 quadruped
+├── demo_stage9_office_pointcloud.py     # Stage 9 demo: 3D point-cloud map (fast, no physics)
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md
