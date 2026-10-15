@@ -359,24 +359,35 @@ Two ways to build the cloud, both reusing it unmodified:
   reflects the real robot's own height jitter, not an idealized constant sensor height.
   871 ring scans → 105,157 points.
 
-Both render two ways (`slam/viz.py`): `render_pointcloud_3d` (a rotating-azimuth GIF) and
-`render_pointcloud_3d_panel` (one static image, the cloud from six fixed angles at once --
-top-down, front, side, and three isometric views) -- a still image you can actually look at
-from a different angle just by looking at a different panel, no playback or interactive
-viewer needed. The top-down panel in particular lines up exactly with Stage 7's 2D
-floorplan (doorway gaps, both cubicle clusters, the fire-extinguisher cabinet all visible),
-confirming the 3D cloud and the 2D map agree on where everything is.
+Both render three ways (`slam/viz.py`):
+- `render_pointcloud_3d` — a rotating-azimuth GIF.
+- `render_pointcloud_3d_panel` — one static image, the cloud from six fixed angles at once
+  (top-down, front, side, three isometric views). The top-down panel in particular lines up
+  exactly with Stage 7's 2D floorplan (doorway gaps, both cubicle clusters, the
+  fire-extinguisher cabinet all visible), confirming the 3D cloud and the 2D map agree on
+  where everything is.
+- `save_pointcloud_interactive_html` — a genuinely interactive viewer: a self-contained HTML
+  file (Plotly, embedded, no internet needed to open it) you can drag to orbit, scroll to
+  zoom in or out, and double-click to recenter -- actually moving through the cloud and
+  looking in whatever direction, not picking from a few pre-rendered angles. Opens with the
+  camera placed near the building's own center (not the usual zoomed-out "outside looking
+  in" default), so the first thing you see is from inside. Needs `plotly` installed in
+  whichever Python runs the script (`go1_rl_walk/mpc/venv/bin/pip install plotly` --
+  imported lazily in `slam/viz.py` so every other demo, which never needs it, still runs
+  with a plain `python3`).
 
 ```bash
 # Fast (no physics):
 /home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage9_office_pointcloud.py \
     --record media/stage9_office_pointcloud.gif \
-    --record-still media/stage9_office_pointcloud_views.png
+    --record-still media/stage9_office_pointcloud_views.png \
+    --record-interactive media/stage9_office_pointcloud_interactive.html
 
 # From the real Go2's actual trajectory:
 /home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage8_office_go2.py \
     --record-pointcloud3d media/stage8_office_go2_pointcloud3d.gif \
-    --record-pointcloud3d-still media/stage8_office_go2_pointcloud3d_views.png
+    --record-pointcloud3d-still media/stage8_office_go2_pointcloud3d_views.png \
+    --record-pointcloud3d-interactive media/stage8_office_go2_pointcloud3d_interactive.html
 ```
 
 ## Repository layout

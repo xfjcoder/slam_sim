@@ -30,7 +30,8 @@ from demo_stage6_go2_world import build_env_xml                            # noq
 from slam.robot import DiffDriveRobot                                      # noqa: E402
 from slam.trajectory import waypoint_command                               # noqa: E402
 from slam.mj_lidar_3d import mj_lidar_scan_3d                              # noqa: E402
-from slam.viz import render_pointcloud_3d, render_pointcloud_3d_panel, save_gif, save_image  # noqa: E402
+from slam.viz import (render_pointcloud_3d, render_pointcloud_3d_panel,     # noqa: E402
+                       save_pointcloud_interactive_html, save_gif, save_image)
 from slam.office import build_world, build_mission, JOBS                   # noqa: E402
 
 
@@ -53,6 +54,10 @@ def main():
     ap.add_argument("--record-still", type=str, default=None,
                      help="static multi-angle panel PNG output path (see "
                           "slam/viz.py's render_pointcloud_3d_panel)")
+    ap.add_argument("--record-interactive", type=str, default=None,
+                     help="self-contained interactive HTML viewer path (Plotly) -- drag to "
+                          "orbit from inside the cloud, scroll to zoom; see "
+                          "slam/viz.py's save_pointcloud_interactive_html")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -115,6 +120,11 @@ def main():
         Path(args.record_still).parent.mkdir(parents=True, exist_ok=True)
         save_image(panel, args.record_still)
         print(f"Saved a static multi-angle panel to {args.record_still}")
+
+    if args.record_interactive:
+        Path(args.record_interactive).parent.mkdir(parents=True, exist_ok=True)
+        save_pointcloud_interactive_html(points, world.bounds, args.record_interactive)
+        print(f"Saved an interactive HTML viewer to {args.record_interactive}")
 
 
 if __name__ == "__main__":

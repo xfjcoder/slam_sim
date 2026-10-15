@@ -48,7 +48,8 @@ from slam.scan_match import icp_2d, scan_to_local_points                   # noq
 from slam.mj_lidar import mj_lidar_scan                                    # noqa: E402
 from slam.mj_lidar_3d import mj_lidar_scan_3d                              # noqa: E402
 from slam.viz import (render_frame, render_pointcloud_3d,                  # noqa: E402
-                       render_pointcloud_3d_panel, save_gif, save_image)
+                       render_pointcloud_3d_panel, save_pointcloud_interactive_html,
+                       save_gif, save_image)
 from slam.eval import map_accuracy                                         # noqa: E402
 from slam.office import build_world, build_mission, ROOM_LABELS, JOBS      # noqa: E402
 
@@ -87,7 +88,12 @@ def main():
     ap.add_argument("--record-pointcloud3d-still", type=str, default=None,
                      help="static multi-angle panel PNG of the same 3D point cloud (see "
                           "slam/viz.py's render_pointcloud_3d_panel)")
+    ap.add_argument("--record-pointcloud3d-interactive", type=str, default=None,
+                     help="self-contained interactive HTML viewer of the same 3D point "
+                          "cloud (see slam/viz.py's save_pointcloud_interactive_html)")
     args = ap.parse_args()
+    want_pointcloud3d = bool(args.record_pointcloud3d or args.record_pointcloud3d_still
+                              or args.record_pointcloud3d_interactive)
 
     rng = np.random.default_rng(args.seed)
     world = build_world()
@@ -206,8 +212,7 @@ def main():
             n_lidar_scans += 1
             belief_trail.append(belief_pose[:2].copy())
 
-            if ((args.record_pointcloud3d or args.record_pointcloud3d_still)
-                    and n_lidar_scans % args.pointcloud_stride == 0):
+            if want_pointcloud3d and n_lidar_scans % args.pointcloud_stride == 0:
                 base_z = float(info["base_height"])
                 pts3d = mj_lidar_scan_3d(
                     env.mujoco_go2.model, env.mujoco_go2.data, (x, y, base_z), yaw,
@@ -265,7 +270,7 @@ def main():
         Path(args.record_robot).parent.mkdir(parents=True, exist_ok=True)
         save_gif(robot_frames, args.record_robot, fps=1.0 / (dt * args.robot_render_every))
         print(f"Saved {len(robot_frames)} frames to {args.record_robot}")
-    if args.record_pointcloud3d or args.record_pointcloud3d_still:
+    if want_pointcloud3d:
         points = (np.concatenate(pointcloud_points, axis=0) if pointcloud_points
                   else np.zeros((0, 3)))
         print(f"Accumulated {len(points)} 3D point-cloud hit points from "
@@ -280,6 +285,12 @@ def main():
             Path(args.record_pointcloud3d_still).parent.mkdir(parents=True, exist_ok=True)
             save_image(panel, args.record_pointcloud3d_still)
             print(f"Saved a static multi-angle panel to {args.record_pointcloud3d_still}")
+        if args.record_pointcloud3d_interactive:
+            Path(args.record_pointcloud3d_interactive).parent.mkdir(parents=True, exist_ok=True)
+            save_pointcloud_interactive_html(points, world.bounds,
+                                              args.record_pointcloud3d_interactive)
+            print(f"Saved an interactive HTML viewer to "
+                  f"{args.record_pointcloud3d_interactive}")
 
 
 if __name__ == "__main__":

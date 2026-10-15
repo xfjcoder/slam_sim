@@ -164,6 +164,45 @@ def render_pointcloud_3d_panel(points: np.ndarray, bounds, views=None,
     return frame
 
 
+def save_pointcloud_interactive_html(points: np.ndarray, bounds, path, point_size: float = 2.0,
+                                      start_inside: bool = True):
+    """A genuinely interactive point-cloud viewer: a self-contained HTML file (Plotly,
+    embedded, no internet needed to open it) the user can drag to orbit, scroll to zoom in
+    or out, and double-click to recenter -- actually being "inside" the cloud and looking
+    in a chosen direction, not just picking from a few pre-rendered angles.
+
+    Imports plotly lazily (not at module level) since most of this project's demos never
+    need it and run with a plain python3 that doesn't have it installed -- only the Stage
+    8/9 scripts (run with go1_rl_walk/mpc's venv, which also has mujoco) use this."""
+    import plotly.graph_objects as go
+
+    xmin, xmax, ymin, ymax = bounds
+    zmax = max(1.0, float(points[:, 2].max()) if len(points) else 1.0)
+
+    fig = go.Figure(data=[go.Scatter3d(
+        x=points[:, 0], y=points[:, 1], z=points[:, 2],
+        mode="markers",
+        marker=dict(size=point_size, color=points[:, 2], colorscale="Viridis", opacity=0.85),
+    )])
+    # Plotly's camera "eye"/"center" are in a normalized scene-relative frame (roughly a
+    # unit cube around the data regardless of actual data units) -- small eye coordinates
+    # place the initial view close to the scene's own center, i.e. inside the building,
+    # rather than the far-away default that only ever looks at it from outside.
+    eye = dict(x=0.12, y=0.12, z=0.09) if start_inside else dict(x=1.25, y=1.25, z=1.0)
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(range=[xmin, xmax], title="x"),
+            yaxis=dict(range=[ymin, ymax], title="y"),
+            zaxis=dict(range=[0.0, zmax], title="z"),
+            aspectmode="data",   # true relative proportions, not auto-stretched to a cube
+            camera=dict(eye=eye, center=dict(x=0, y=0, z=0)),
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        title="3D lidar point cloud -- drag to orbit, scroll to zoom, double-click to reset",
+    )
+    fig.write_html(str(path), include_plotlyjs=True)
+
+
 def save_image(frame: np.ndarray, path):
     Image.fromarray(frame).save(path)
 
