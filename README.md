@@ -257,6 +257,27 @@ python3 demo_stage7_office.py --jobs kitchen conference_a conference_b cubicles 
 python3 demo_stage7_office.py --jobs fire_extinguisher kitchen --record media/my_run.gif
 ```
 
+#### Stage 7b: the same floorplan, in 3D
+
+<p align="center">
+  <img src="media/stage7b_office_3d_flythrough.gif" width="520" alt="A slow orbiting camera flythrough of the office floorplan rendered in MuJoCo 3D: the kitchen, both conference rooms, the cubicle dividers, and the fire-extinguisher cabinet are all real extruded wall geometry with real doorway gaps; a Go2 quadruped stands at the entrance for scale">
+</p>
+
+Stage 7's floorplan (`slam/office.py`) is a flat 2D line-segment world -- correct for what
+the lidar/occupancy-grid pipeline needs, but not something you can actually walk through and
+look at. This extrudes the exact same wall segments into real MuJoCo box geometry (reusing
+Stage 6's own `inject_walls`/`build_env_xml` unmodified -- both were already generic over
+any wall array, not specific to Stage 6's own layout) and renders a slow orbiting flythrough
+with no physics stepping at all, just one `mj_forward` to resolve a static scene -- a Go2
+quadruped stands at the entrance purely for scale. This is the fast way to sanity-check a
+new floorplan actually looks right in 3D before spending the compute on a full physics-driven
+run (see Stage 8, next).
+
+```bash
+/home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage7b_office_3d.py \
+    --record media/stage7b_office_3d_flythrough.gif
+```
+
 ## Repository layout
 
 ```
@@ -279,6 +300,8 @@ slam_sim/
 ├── demo_stage5_loop_closure.py # Stage 5 demo: loop closure + pose-graph optimization
 ├── demo_stage6_go2_world.py     # Stage 6 demo: same pipeline, real Go2 quadruped (MuJoCo)
 ├── demo_stage7_office.py          # Stage 7 demo: office floorplan + named-location jobs
+├── demo_stage7b_office_3d.py        # Stage 7b demo: static 3D MuJoCo flythrough of the office
+├── demo_stage8_office_go2.py          # Stage 8 demo: Stage 7's office mission, real Go2 quadruped
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md
