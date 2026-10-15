@@ -15,6 +15,7 @@ from PIL import Image
 def render_frame(world, true_pose, odom_pose=None, scan_points=None,
                   true_trail=None, odom_trail=None, belief_trail=None, map_points=None,
                   occupancy_grid=None, show_ground_truth_walls=True,
+                  labels=None, status_text=None,
                   figsize=(6, 4.5), dpi=100) -> np.ndarray:
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     xmin, xmax, ymin, ymax = world.bounds
@@ -61,6 +62,16 @@ def render_frame(world, true_pose, odom_pose=None, scan_points=None,
     _draw_robot(ax, true_pose, color="#2a9d4a")
     if odom_pose is not None:
         _draw_robot(ax, odom_pose, color="#e08b2a")
+
+    if labels is not None:
+        for lx, ly, text in labels:
+            ax.text(lx, ly, text, fontsize=7, color="#444", ha="center", va="center",
+                     style="italic", zorder=5)
+
+    if status_text is not None:
+        ax.text(0.02, 0.98, status_text, transform=ax.transAxes, fontsize=9,
+                 va="top", ha="left", color="#222",
+                 bbox=dict(boxstyle="round", facecolor="#ffe08a", alpha=0.9))
 
     if ax.get_legend_handles_labels()[0]:
         ax.legend(loc="upper right", fontsize=7, framealpha=0.8)

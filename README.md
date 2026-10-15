@@ -39,14 +39,17 @@ concrete failure the previous one exposed:
 | 4. Scan-matching (ICP) | Correct the pose every tick against the map built so far | Drift 0.132m → 0.065m; wall accuracy recovers to 79.5% |
 | 5. Loop closure (stretch) | One ICP match to the start + batch pose-graph solve | Drift 0.327m → 0.055m; corrects the *whole* trajectory, not just the latest pose |
 | 6. Real Go2 quadruped | Same Stage 2/4 pipeline, unmodified, on real MuJoCo dynamics + real lidar | Drift 1.178m → 0.038m over one ~39s lap in a richer world |
+| 7. Office mission | Multi-room floorplan + a named-location "job" command layer | Drift 0.207m → 0.053m; wall accuracy 83.3% over a 5-stop tour |
 
 The throughline: odometry alone drifts without bound (Stage 1/3); continuously correcting
 against the map you're building helps a lot but is still a locally-greedy fix (Stage 4);
 recognizing an explicit revisit and solving globally is what actually closes the loop
-(Stage 5); and none of it was specific to the toy kinematic robot it was developed against
-— the same pipeline, unmodified, works on a real legged robot's real sensor stream (Stage
-6). All six stages are verified both numerically (printed accuracy/drift/RMSE) and visually
-(every stage has a GIF — see below) — the two checks agree throughout.
+(Stage 5); none of it was specific to the toy kinematic robot it was developed against — the
+same pipeline, unmodified, works on a real legged robot's real sensor stream (Stage 6); and
+the same pipeline again, unmodified, is equally indifferent to *why* the robot is moving —
+a scripted lap and a commanded office errand run are both just "a trajectory to correct"
+(Stage 7). All seven stages are verified both numerically (printed accuracy/drift/RMSE) and
+visually (every stage has a GIF — see below) — the two checks agree throughout.
 
 ## Staged plan
 
@@ -89,6 +92,10 @@ recognizing an explicit revisit and solving globally is what actually closes the
    correction run completely unmodified against a real MuJoCo lidar scan and real
    quadruped dynamics, and still cut final position drift from 1.178m (raw, noisy
    leg-odometry) to 0.038m (SLAM-corrected) over one ~39s lap.
+7. **(Follow-on) A multi-room office floorplan with a named-location command layer** —
+   DONE. See "Stage 7" below; the short version: kitchen, two conference rooms, a cubicle
+   area, and a fire-extinguisher check spot, visited in any commanded order via the same
+   Stage 2/4 SLAM pipeline, unmodified.
 
 ### Stage 1 demo
 
@@ -205,6 +212,51 @@ on the far turns).
     --record-map media/stage6_go2_slam_map.gif --record-robot media/stage6_go2_quadruped.gif
 ```
 
+### Stage 7: an office floorplan, with commands
+
+<p align="center">
+  <img src="media/stage7_office_tour.gif" width="520" alt="The robot visits a kitchen, two conference rooms, a cubicle area, and a fire-extinguisher spot in sequence, dwelling at each one with a status banner (e.g. 'Making coffee...'); the occupancy-grid map of the whole floorplan builds up as it goes, and the SLAM belief trail (purple) tracks the true path far more closely than raw odometry (orange)">
+</p>
+
+Every stage above drives one fixed, pre-scripted lap. This stage asks a different question:
+can the same pipeline support an actual *command* -- "go here, do this job, then go there" --
+instead of one baked-in trajectory? `slam/office.py` builds a richer ground-truth world (a
+kitchen, two conference rooms, and an open cubicle/corridor area with a fire-extinguisher
+cabinet, all behind real doorways) plus a small named-location registry: each job name
+(`kitchen`, `conference_a`, `conference_b`, `cubicles`, `fire_extinguisher`) maps to a
+hand-placed path from a shared hub waypoint to that spot, a short task description, and a
+dwell time. `--jobs` takes any ordered subset in any order, builds one waypoint mission out
+of it, and the robot drives it exactly like Stages 1-5's scripted lap -- same
+`slam/trajectory.py` steering law, same occupancy-grid mapping, same ICP scan-to-map
+correction, all completely unmodified. While dwelling at a job the robot is genuinely
+stationary (no commanded velocity) but keeps scanning and correcting every tick, so standing
+still to "do the job" also means standing still to get a good fix on the room.
+
+One real wrinkle this layout exposed: the shared map-accuracy scorer's wall-sample heuristic
+(`slam/eval.py`) picks which side of a zero-thickness wall to sample by guessing "whichever
+side faces the map's overall centroid" -- a fine proxy for Stage 1-6's outer-boundary-heavy
+loop_corridor (the robot only ever approaches from the one inside direction), but wrong half
+the time for an office with walls that have open rooms on *both* sides. Fixed with an
+opt-in `wall_both_sides` scoring mode (score each sample against whichever of its two
+neighboring cells is more occupied, rather than guessing one) -- confirmed the underlying
+map was correct all along (manually checked the exact occupancy-grid cells around a
+divider wall) and this was purely an evaluation-heuristic gap, not a mapping bug. Stage
+1-6's own numbers are untouched (that mode defaults off).
+
+Over a 5-stop tour (kitchen, both conference rooms, cubicles, fire extinguisher, in that
+order): final position drift 0.207m (raw odometry) → 0.053m (SLAM-corrected); ICP found
+enough map to correct against on 1026/1027 ticks; wall accuracy 83.3%. Verified visually via
+GIF: every room's doorway, the cubicle dividers, and the fire-extinguisher cabinet all come
+out crisp in the occupancy grid, and the yellow status banner ("Making coffee...",
+"Attending a meeting...", ...) visibly pauses the trail at each stop.
+
+```bash
+python3 demo_stage7_office.py --jobs kitchen conference_a conference_b cubicles \
+    fire_extinguisher --record media/stage7_office_tour.gif
+# Or any subset/order -- e.g. just two stops:
+python3 demo_stage7_office.py --jobs fire_extinguisher kitchen --record media/my_run.gif
+```
+
 ## Repository layout
 
 ```
@@ -217,6 +269,7 @@ slam_sim/
 │   ├── scan_match.py          # point-to-point ICP: align a scan against the map built so far
 │   ├── pose_graph.py           # batch least-squares pose-graph optimizer (Stage 5)
 │   ├── mj_lidar.py              # real mujoco.mj_ray 2D lidar scan (Stage 6, real robot)
+│   ├── office.py                 # office floorplan + named-location/job registry (Stage 7)
 │   ├── trajectory.py         # shared scripted loop (reused by every stage demo)
 │   ├── eval.py                 # shared map-accuracy scoring (reused by every mapping demo)
 │   └── viz.py                  # render a frame (world + poses + scan + map) -> GIF
@@ -225,6 +278,7 @@ slam_sim/
 ├── demo_stage4_slam.py     # Stage 4 demo: ICP scan-matching correction, closing the loop
 ├── demo_stage5_loop_closure.py # Stage 5 demo: loop closure + pose-graph optimization
 ├── demo_stage6_go2_world.py     # Stage 6 demo: same pipeline, real Go2 quadruped (MuJoCo)
+├── demo_stage7_office.py          # Stage 7 demo: office floorplan + named-location jobs
 ├── media/              # demo GIFs, one per stage
 ├── requirements.txt
 └── README.md
