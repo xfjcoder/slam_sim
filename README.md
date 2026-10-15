@@ -40,6 +40,7 @@ concrete failure the previous one exposed:
 | 5. Loop closure (stretch) | One ICP match to the start + batch pose-graph solve | Drift 0.327m → 0.055m; corrects the *whole* trajectory, not just the latest pose |
 | 6. Real Go2 quadruped | Same Stage 2/4 pipeline, unmodified, on real MuJoCo dynamics + real lidar | Drift 1.178m → 0.038m over one ~39s lap in a richer world |
 | 7. Office mission | Multi-room floorplan + a named-location "job" command layer | Drift 0.207m → 0.053m; wall accuracy 83.3% over a 5-stop tour |
+| 8. Office mission, real Go2 | Stage 7's job tour, run on the real quadruped (Stage 6 + 7 combined) | Drift 4.733m → 0.026m over a 130.8s, 5-room real-robot tour |
 
 The throughline: odometry alone drifts without bound (Stage 1/3); continuously correcting
 against the map you're building helps a lot but is still a locally-greedy fix (Stage 4);
@@ -48,7 +49,9 @@ recognizing an explicit revisit and solving globally is what actually closes the
 same pipeline, unmodified, works on a real legged robot's real sensor stream (Stage 6); and
 the same pipeline again, unmodified, is equally indifferent to *why* the robot is moving —
 a scripted lap and a commanded office errand run are both just "a trajectory to correct"
-(Stage 7). All seven stages are verified both numerically (printed accuracy/drift/RMSE) and
+(Stage 7) — and those last two independent axes (real robot, real commands) combine for
+free: no new SLAM code was needed to run the office job tour on the real quadruped (Stage
+8). All eight stages are verified both numerically (printed accuracy/drift/RMSE) and
 visually (every stage has a GIF — see below) — the two checks agree throughout.
 
 ## Staged plan
@@ -96,6 +99,11 @@ visually (every stage has a GIF — see below) — the two checks agree througho
    DONE. See "Stage 7" below; the short version: kitchen, two conference rooms, a cubicle
    area, and a fire-extinguisher check spot, visited in any commanded order via the same
    Stage 2/4 SLAM pipeline, unmodified.
+8. **(Follow-on) Stage 7's office job tour, on the real Go2 quadruped** — DONE. See
+   "Stage 8" below; the short version: Stage 6's real-robot plumbing and Stage 7's
+   named-location mission combine with zero new SLAM code -- the quadruped visits all
+   five office locations and cuts final position drift from 4.733m (raw leg-odometry) to
+   0.026m (SLAM-corrected) over a 130.8s tour.
 
 ### Stage 1 demo
 
@@ -276,6 +284,40 @@ run (see Stage 8, next).
 ```bash
 /home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage7b_office_3d.py \
     --record media/stage7b_office_3d_flythrough.gif
+```
+
+### Stage 8: the office job tour, on the real Go2
+
+<p align="center">
+  <img src="media/stage8_office_go2_quadruped.gif" width="300" alt="The real Go2 quadruped walking into Conference B mid-tour, inside the office floorplan rendered in MuJoCo 3D">
+  <img src="media/stage8_office_go2_slam_map.gif" width="300" alt="Occupancy-grid map of the full 5-room office tour built from the Go2's real lidar and real leg odometry: raw odometry (orange) drifts wildly across the whole floorplan, while the ICP-corrected SLAM belief (purple) tracks the true path (green) tightly the entire time">
+</p>
+
+Stage 6 (real robot) and Stage 7 (named-location commands) are independent axes -- this
+combines them with no new SLAM code at all: Stage 7's office mission (`slam/office.py`'s
+`build_mission`) drives the real Go2 quadruped exactly the way Stage 6 drove it around the
+plain loop corridor, converting each job's dwell time (Stage 7's own 0.1s "ticks") into real
+physics steps at the real control rate. The quadruped genuinely walks into the kitchen,
+both conference rooms, the cubicle area, and up to the fire-extinguisher cabinet, actually
+balancing and holding still at each stop while the job "runs."
+
+Real quadruped dynamics over a 5-room, 130.8-second tour accumulate far more raw leg-odometry
+drift than Stage 6's single loop-corridor lap did (4.733m vs. 1.178m -- more legs, more
+turns, more time for stance-phase/slip noise to add up) -- which makes the correction more
+dramatic, not less: final position drift 4.733m (raw odometry) → 0.026m (SLAM-corrected),
+with ICP finding enough map to correct against on 2613/2614 of the real lidar scans. Wall
+accuracy 89.5% (`wall_both_sides` scoring, see Stage 7) -- actually higher than Stage 7's
+own kinematic-robot run, since five separate stops (vs. one continuous sweep) means each
+room gets looked at from more distinct angles over the tour. Verified visually via both
+GIFs: the 3rd-person view shows the quadruped genuinely standing inside each room, and the
+map view shows the raw-odometry trail (orange) ballooning out across the entire floorplan
+while the SLAM belief (purple) stays locked to the true path throughout.
+
+```bash
+/home/cstu/robo/go1_rl_walk/mpc/venv/bin/python3 demo_stage8_office_go2.py \
+    --jobs kitchen conference_a conference_b cubicles fire_extinguisher \
+    --record-map media/stage8_office_go2_slam_map.gif \
+    --record-robot media/stage8_office_go2_quadruped.gif
 ```
 
 ## Repository layout
